@@ -1,0 +1,1 @@
+ALTER TABLE prem_outcome add column discharge_date timestamp

@@ -1,0 +1,84 @@
+trigger:
+  branches:
+    include:
+      - Version-1
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  nodeVersion: '22.x'
+
+stages:
+
+# =========================
+# Build Stage
+# =========================
+- stage: Build
+  displayName: 'Build Stage'
+
+  jobs:
+  - job: BuildJob
+    displayName: 'Build Next.js'
+
+    steps:
+    - task: NodeTool@0
+      displayName: 'Install Node.js'
+      inputs:
+        versionSpec: '$(nodeVersion)'
+
+    - script: |
+        npm install
+      displayName: 'Install Dependencies'
+
+    - script: |
+        npm run build
+      displayName: 'Build Next.js'
+
+    - task: ArchiveFiles@2
+      displayName: 'Archive Application'
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/nextjs.zip'
+        replaceExistingArchive: true
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
+
+# =========================
+# Deploy Stage
+# =========================
+- stage: Deploy
+  displayName: 'Deploy Stage'
+  dependsOn: Build
+
+  jobs:
+  - job: DeployJob
+    displayName: 'Deploy to Azure App Service'
+
+    steps:
+    - task: DownloadBuildArtifacts@1
+      displayName: 'Download Artifact'
+      inputs:
+        buildType: 'current'
+        downloadType: 'single'
+        artifactName: 'drop'
+        downloadPath: '$(Pipeline.Workspace)'
+
+    - task: AzureRmWebAppDeployment@5
+      displayName: 'Deploy to Azure App Service'
+      inputs:
+        ConnectionType: 'AzureRM'
+        azureSubscription: 'Nexova_Subscription(1)(00f60224-064a-4b26-a0e4-7b18cc8ba5e1)'
+        appType: 'webAppLinux'
+        WebAppName: 'demodeployment'
+        packageForLinux: '$(Pipeline.Workspace)/drop/nextjs.zip'
+        RuntimeStack: 'NODE|18-lts'
+        StartupCommand: 'npm start'
+        DeploymentTypeLinux: 'oneDeploy'

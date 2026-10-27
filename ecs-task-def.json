@@ -1,0 +1,36 @@
+{
+  "family": "taei-nodejs",
+  "networkMode": "awsvpc",
+  "executionRoleArn": "arn:aws:iam::460418814675:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "taei-nodejs",
+      "image": "460418814675.dkr.ecr.ap-south-1.amazonaws.com/taei-nodejs:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3001,
+          "hostPort": 3001,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/taei-nodejs",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "2048",
+  "memory": "4096"
+}
