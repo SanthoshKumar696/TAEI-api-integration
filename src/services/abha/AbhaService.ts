@@ -33,6 +33,22 @@ class AbhaService {
     return normalized;
   }
 
+  private validateXToken(xToken: string): string {
+    const token = String(xToken ?? "").trim().replace(/^(?:Bearer\s+)+/i, "").trim();
+
+    if (!token) {
+      throw {
+        status: 400,
+        data: {
+          message: "xToken is required",
+          code: "MISSING_X_TOKEN"
+        }
+      };
+    }
+
+    return token;
+  }
+
   private validateTxnId(txnId: string, fieldName = "txnId"): string {
     if (!txnId || String(txnId).trim() === "") {
       throw {
@@ -585,25 +601,19 @@ class AbhaService {
   }
 
 //-----------------------------------
-async sendMobileOtpNEW(profileId: number, mobile: string) {
-  console.log("SEND MOBILE OTP START");
+async sendMobileOtpNEW(xToken: string, mobile: string) {
+  mobile = this.normalizeMobile(mobile);
+  xToken = this.validateXToken(xToken);
 
   try {
     // Step 1 — Get ABDM Gateway Token
     const gatewayToken = await getAbhaToken();
-    console.log("Gateway Token fetched");
 
     // Step 2 — Get Public Key
     const publicKey = await getPublicKey();
-    console.log("Public Key fetched");
 
     // Step 3 — Encrypt Mobile Number
     const encryptedMobile = encryptData(mobile, publicKey);
-    console.log("Mobile encrypted");
-
-    // Step 4 — Get valid X-Token using profileId
-    const xToken = await AbhaProfileService.getXToken(profileId);
-    console.log("XToken fetched");
 
     // Step 5 — Common Headers
     const headers = getAbhaHeaders(
@@ -612,7 +622,7 @@ async sendMobileOtpNEW(profileId: number, mobile: string) {
     );
 
     console.log("HEADERS:", {
-      ...headers,
+      ...Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== "x-token")),
       Authorization: headers.Authorization ? "Bearer ****" : undefined,
       "X-Token": headers["X-Token"] ? "Bearer ****" : undefined
     });
@@ -635,60 +645,13 @@ async sendMobileOtpNEW(profileId: number, mobile: string) {
       otpSystem: body.otpSystem
     });
 
-    try {
+    const response = await axios.post(
+      `${ABHA_CONFIG.ABHA.baseUrl}/v3/profile/account/request/otp`,
+      body,
+      { headers }
+    );
 
-      // Step 7 — Call ABHA Mobile OTP API
-      const response = await axios.post(
-        `${ABHA_CONFIG.ABHA.baseUrl}/v3/profile/account/request/otp`,
-        body,
-        { headers }
-      );
-
-      console.log(
-        "SEND MOBILE OTP SUCCESS:",
-        response.data
-      );
-
-      return response.data;
-
-    } catch (error: any) {
-
-      // Step 8 — If X-Token expired, refresh and retry
-      if (error.response?.status === 401) {
-
-        console.log(
-          "Got 401 — forcing XToken refresh and retrying..."
-        );
-
-        const refreshedXToken =
-          await AbhaProfileService.getRefreshToken(profileId);
-
-        console.log("Refreshed XToken fetched");
-
-        const retryHeaders = getAbhaHeaders(
-          gatewayToken,
-          refreshedXToken
-        );
-
-        // Step 9 — Retry once
-        const retryResponse = await axios.post(
-          `${ABHA_CONFIG.ABHA.baseUrl}/v3/profile/account/request/otp`,
-          body,
-          {
-            headers: retryHeaders
-          }
-        );
-
-        console.log(
-          "SEND MOBILE OTP RETRY SUCCESS:",
-          retryResponse.data
-        );
-
-        return retryResponse.data;
-      }
-
-      throw error;
-    }
+    return response.data;
 
   } catch (error) {
     this.handleAxiosError(error);
@@ -1814,12 +1777,25 @@ console.log(
 }
 
 async verifyMobileOtp(
-  profileId: number,
+  xToken: string,
   txnId: string,
   otp: string
 ) {
-  try {
+  xToken = this.validateXToken(xToken);
+  txnId = this.validateTxnId(txnId);
+  otp = String(otp ?? "").trim();
 
+  if (!otp) {
+    throw {
+      status: 400,
+      data: {
+        message: "otp is required",
+        code: "MISSING_OTP"
+      }
+    };
+  }
+
+  try {
     // Step 1 - Get ABDM Access Token
     const token = await getAbhaToken();
 
@@ -1829,13 +1805,8 @@ async verifyMobileOtp(
     // Step 3 - Encrypt OTP
     const encryptedOtp = encryptData(otp, publicKey);
 
-    // Step 4 - Get X-Token
-    const xToken = await AbhaProfileService.getXToken(profileId);
-
     // Step 5 - Common Headers
-    const headers = getAbhaHeaders(token);
-    headers["X-Token"] = `Bearer ${xToken}`;
-
+    const headers = getAbhaHeaders(token, xToken);
     // Step 6 - Request Body
     const body = {
       scope: [
