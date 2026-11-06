@@ -1479,32 +1479,18 @@ router.post(
  *           schema:
  *             type: object
  *             required:
- *               - xToken
+ *               - profileId
  *               - mobile
  *             properties:
- *               xToken:
- *                 type: string
- *                 description: ABHA X-token; may be supplied with or without the Bearer prefix.
- *                 example: paste_abha_token_here
+ *               profileId:
+ *                 type: integer
+ *                 example: 1
  *               mobile:
  *                 type: string
  *                 example: "9876543210"
  *     responses:
  *       200:
- *         description: Actual ABDM response, including the OTP transaction ID.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               required:
- *                 - txnId
- *               properties:
- *                 txnId:
- *                   type: string
- *                   description: Transaction ID to provide when verifying the OTP.
- *               additionalProperties: true
- *             example:
- *               txnId: "2e3abc76-fd9f-45e2-9e38-d3e019603e96"
+ *         description: OTP Sent Successfully
  */
 router.post(
   "/updatemobile/send-otp",
@@ -1512,16 +1498,20 @@ router.post(
 
     try {
 
-      const { xToken, mobile } = req.body;
+      const { profileId, mobile } = req.body;
 
       const result = await abhaService.sendMobileOtpNEW(
-        xToken,
+        profileId,
         mobile
       );
 
       res.json(result);
 
     } catch (error: any) {
+
+      console.log("===== ABHA ERROR =====");
+      console.log(error);
+
       return res
         .status(error.status || 500)
         .json(error.data);
@@ -1543,14 +1533,13 @@ router.post(
  *           schema:
  *             type: object
  *             required:
- *               - xToken
+ *               - profileId
  *               - txnId
  *               - otp
  *             properties:
- *               xToken:
- *                 type: string
- *                 description: ABHA X-token; may be supplied with or without the Bearer prefix.
- *                 example: paste_abha_token_here
+ *               profileId:
+ *                 type: integer
+ *                 example: 1
  *               txnId:
  *                 type: string
  *                 example: "968d7b8f-2a0f-44eb-be21-dc1fc70e327c"
@@ -1559,12 +1548,7 @@ router.post(
  *                 example: "123456"
  *     responses:
  *       200:
- *         description: Actual ABDM mobile verification response.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               additionalProperties: true
+ *         description: Mobile Number Verified Successfully
  */
 router.post(
   "/updatemobile/verify-otp",
@@ -1572,10 +1556,10 @@ router.post(
 
     try {
 
-      const { xToken, txnId, otp } = req.body;
+      const { profileId, txnId, otp } = req.body;
 
       const result = await abhaService.verifyMobileOtp(
-        xToken,
+        profileId,
         txnId,
         otp
       );
@@ -1583,6 +1567,10 @@ router.post(
       res.json(result);
 
     } catch (error: any) {
+
+      console.log("===== ABHA ERROR =====");
+      console.log(error);
+
       return res
         .status(error.status || 500)
         .json(error.data);
@@ -2050,7 +2038,26 @@ router.post(
  *                 otp: "123456"
  *     responses:
  *       200:
- *         description: Login Verified Successfully
+ *         description: Login verified; includes the saved database profileId for a single profile and profileId on each profiles entry.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 profileId:
+ *                   type: integer
+ *                   description: Saved profile ID when exactly one profile is returned.
+ *                 profiles:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       profileId:
+ *                         type: integer
+ *                       id:
+ *                         type: integer
+ *                       abha_number:
+ *                         type: string
  */
 router.post(
   "/login/verify-otp",
@@ -2234,7 +2241,30 @@ router.post(
  *                 otp: "123456"
  *     responses:
  *       200:
- *         description: Login Verified Successfully
+ *         description: ABHA Address login verified; includes the saved database profileId for a single profile and profileId on each profiles entry.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 profileId:
+ *                   type: integer
+ *                   description: Saved profile ID when exactly one profile is returned.
+ *                 profiles:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       profileId:
+ *                         type: integer
+ *                       id:
+ *                         type: integer
+ *                       abha_number:
+ *                         type: string
+ *                       abha_address:
+ *                         type: string
+ *                       name:
+ *                         type: string
  */
 router.post(
   "/abha-address/verify-otp",

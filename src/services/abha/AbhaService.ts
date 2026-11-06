@@ -33,22 +33,6 @@ class AbhaService {
     return normalized;
   }
 
-  private validateXToken(xToken: string): string {
-    const token = String(xToken ?? "").trim().replace(/^(?:Bearer\s+)+/i, "").trim();
-
-    if (!token) {
-      throw {
-        status: 400,
-        data: {
-          message: "xToken is required",
-          code: "MISSING_X_TOKEN"
-        }
-      };
-    }
-
-    return token;
-  }
-
   private validateTxnId(txnId: string, fieldName = "txnId"): string {
     if (!txnId || String(txnId).trim() === "") {
       throw {
@@ -601,10 +585,7 @@ class AbhaService {
   }
 
 //-----------------------------------
-async sendMobileOtpNEW(xToken: string, mobile: string) {
-  mobile = this.normalizeMobile(mobile);
-  xToken = this.validateXToken(xToken);
-
+async sendMobileOtpNEW(profileId: number, mobile: string) {
   try {
     // Step 1 — Get ABDM Gateway Token
     const gatewayToken = await getAbhaToken();
@@ -615,6 +596,9 @@ async sendMobileOtpNEW(xToken: string, mobile: string) {
     // Step 3 — Encrypt Mobile Number
     const encryptedMobile = encryptData(mobile, publicKey);
 
+    // Step 4 — Get valid X-Token using profileId
+    const xToken = await AbhaProfileService.getXToken(profileId);
+
     // Step 5 — Common Headers
     const headers = getAbhaHeaders(
       gatewayToken,
@@ -622,7 +606,7 @@ async sendMobileOtpNEW(xToken: string, mobile: string) {
     );
 
     console.log("HEADERS:", {
-      ...Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== "x-token")),
+      ...headers,
       Authorization: headers.Authorization ? "Bearer ****" : undefined,
       "X-Token": headers["X-Token"] ? "Bearer ****" : undefined
     });
@@ -645,13 +629,31 @@ async sendMobileOtpNEW(xToken: string, mobile: string) {
       otpSystem: body.otpSystem
     });
 
-    const response = await axios.post(
-      `${ABHA_CONFIG.ABHA.baseUrl}/v3/profile/account/request/otp`,
-      body,
-      { headers }
-    );
+    try {
+      const response = await axios.post(
+        `${ABHA_CONFIG.ABHA.baseUrl}/v3/profile/account/request/otp`,
+        body,
+        { headers }
+      );
 
-    return response.data;
+      console.log("SEND MOBILE OTP SUCCESS:", response.data);
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        const refreshedXToken = await AbhaProfileService.getRefreshToken(profileId);
+        const retryHeaders = getAbhaHeaders(gatewayToken, refreshedXToken);
+        const retryResponse = await axios.post(
+          `${ABHA_CONFIG.ABHA.baseUrl}/v3/profile/account/request/otp`,
+          body,
+          { headers: retryHeaders }
+        );
+
+        console.log("SEND MOBILE OTP RETRY SUCCESS:", retryResponse.data);
+        return retryResponse.data;
+      }
+
+      throw error;
+    }
 
   } catch (error) {
     this.handleAxiosError(error);
@@ -1777,24 +1779,10 @@ console.log(
 }
 
 async verifyMobileOtp(
-  xToken: string,
+  profileId: number,
   txnId: string,
   otp: string
 ) {
-  xToken = this.validateXToken(xToken);
-  txnId = this.validateTxnId(txnId);
-  otp = String(otp ?? "").trim();
-
-  if (!otp) {
-    throw {
-      status: 400,
-      data: {
-        message: "otp is required",
-        code: "MISSING_OTP"
-      }
-    };
-  }
-
   try {
     // Step 1 - Get ABDM Access Token
     const token = await getAbhaToken();
@@ -1804,6 +1792,9 @@ async verifyMobileOtp(
 
     // Step 3 - Encrypt OTP
     const encryptedOtp = encryptData(otp, publicKey);
+
+    // Step 4 - Get X-Token
+    const xToken = await AbhaProfileService.getXToken(profileId);
 
     // Step 5 - Common Headers
     const headers = getAbhaHeaders(token, xToken);
@@ -2082,10 +2073,16 @@ async verifyLoginOtp(
 
     // ✅ save/update profile(s), same pattern as enrollment flow
     const savedProfiles = await AbhaProfileService.createOrUpdateFromLogin(response.data);
+    const profiles = savedProfiles.map(p => ({
+      id: p.id,
+      profileId: p.id,
+      abha_number: p.abha_number
+    }));
 
     return {
       ...response.data,
-      profiles: savedProfiles.map(p => ({ id: p.id, abha_number: p.abha_number })),
+      ...(profiles.length === 1 ? { profileId: profiles[0].profileId } : {}),
+      profiles,
     };
 
   } catch (error) {
@@ -2313,14 +2310,18 @@ async verifyAbhaAddressOtp(
       savedProfiles.map(p => p.id)
     );
 
+    const profiles = savedProfiles.map(p => ({
+      id: p.id,
+      profileId: p.id,
+      abha_number: p.abha_number,
+      abha_address: p.abha_address,
+      name: p.name
+    }));
+
     return {
       ...response.data,
-      profiles: savedProfiles.map(p => ({
-        id: p.id,
-        abha_number: p.abha_number,
-        abha_address: p.abha_address,
-        name: p.name
-      }))
+      ...(profiles.length === 1 ? { profileId: profiles[0].profileId } : {}),
+      profiles
     };
 
   } catch (error: any) {
